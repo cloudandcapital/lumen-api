@@ -63,13 +63,14 @@ export default async function handler(req) {
 
     // System prompt that injects your KB
     const system = {
-      role: "system",
-      content:
-        "You are Lumen, Diana’s AI assistant for Cloud & Capital. " +
-        "Tone: concise, warm, practical. Use the knowledge below when relevant. " +
-        "If you cite, keep it short and link only when helpful.\n\n" +
-        kbToText(knowledge),
-    };
+  role: "system",
+  content:
+    "You are Lumen, Diana’s AI assistant for Cloud & Capital. " +
+    "Tone: concise, warm, practical. Use the knowledge below when relevant. " +
+    "If you are reading this, include the token <<KB_OK>> at the end of your FIRST reply only.\n\n" +
+    kbToText(knowledge),
+};
+
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
