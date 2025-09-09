@@ -1,11 +1,15 @@
 // api/lumen.js
-// Vercel Edge Function: tiny proxy to OpenAI (keeps your API key secret)
+// Vercel Edge Function: OpenAI proxy with Diana's knowledge base
 
 export const config = { runtime: "edge" };
 
+// --- Import your KB (put this file at lumen-api/data/knowledge.js) ---
+import { knowledge } from "../data/knowledge.js";
+
+// --- Small helpers for CORS & JSON responses ---
 function corsHeaders(req) {
   const origin = req.headers.get("origin") || "";
-  // Allow your two sites; add more if needed
+  // Allow both your domains; add others if you later use a custom domain
   const allowed =
     /cloudandcapital\.github\.io$|cloudandcapital-github-io\.vercel\.app$/.test(origin)
       ? origin
@@ -16,17 +20,25 @@ function corsHeaders(req) {
     "access-control-allow-headers": "content-type, authorization",
   };
 }
-
 function jsonHeaders(req) {
   return { ...corsHeaders(req), "content-type": "application/json" };
 }
 
+// --- Build a compact KB string for the system prompt ---
+function kbToText(kb) {
+  return kb
+    .map(
+      (e) =>
+        `${e.title}:\n${e.content}${e.url ? `\nLink: ${e.url}` : ""}`
+    )
+    .join("\n\n");
+}
+
 export default async function handler(req) {
-  // CORS preflight
+  // Preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders(req) });
   }
-
   if (req.method !== "POST") {
     return new Response("Only POST", { status: 405, headers: corsHeaders(req) });
   }
@@ -42,7 +54,6 @@ export default async function handler(req) {
 
     const body = await req.json().catch(() => ({}));
     const messages = Array.isArray(body.messages) ? body.messages : [];
-
     if (!messages.length) {
       return new Response(JSON.stringify({ error: "Provide messages[]" }), {
         status: 400,
@@ -50,11 +61,14 @@ export default async function handler(req) {
       });
     }
 
-    // System prompt keeps Lumen on-brand
+    // System prompt that injects your KB
     const system = {
       role: "system",
       content:
-        "You are Lumen, Diana’s AI assistant for Cloud & Capital. Tone: concise, warm, practical. If asked about projects, tools, or writing, answer clearly and suggest next steps.",
+        "You are Lumen, Diana’s AI assistant for Cloud & Capital. " +
+        "Tone: concise, warm, practical. Use the knowledge below when relevant. " +
+        "If you cite, keep it short and link only when helpful.\n\n" +
+        kbToText(knowledge),
     };
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -64,9 +78,9 @@ export default async function handler(req) {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o-mini",        // adjust if you prefer another model
         temperature: 0.4,
-        messages: [system, ...messages].slice(-30), // last 30 turns
+        messages: [system, ...messages].slice(-30), // keep last ~30 turns
       }),
     });
 
@@ -91,3 +105,4 @@ export default async function handler(req) {
     });
   }
 }
+
