@@ -3,15 +3,17 @@
 
 export const config = { runtime: "edge" };
 
-// --- Import your KB (put this file at lumen-api/data/knowledge.js) ---
+// Import your KB (file at lumen-api/data/knowledge.js)
 import { knowledge } from "../data/knowledge.js";
 
-// --- Small helpers for CORS & JSON responses ---
+// ---------- CORS & JSON helpers ----------
 function corsHeaders(req) {
   const origin = req.headers.get("origin") || "";
-  // Allow both your domains; add others if you later use a custom domain
+  // Allow your sites; add more if you later use a custom domain
   const allowed =
-    /cloudandcapital\.github\.io$|cloudandcapital-github-io\.vercel\.app$/.test(origin)
+    /cloudandcapital\.github\.io$|cloudandcapital-github-io\.vercel\.app$|localhost(:\d+)?$/.test(
+      origin
+    )
       ? origin
       : "*";
   return {
@@ -24,7 +26,7 @@ function jsonHeaders(req) {
   return { ...corsHeaders(req), "content-type": "application/json" };
 }
 
-// --- Build a compact KB string for the system prompt ---
+// ---------- Build compact KB text for the system prompt ----------
 function kbToText(kb) {
   return kb
     .map(
@@ -35,7 +37,7 @@ function kbToText(kb) {
 }
 
 export default async function handler(req) {
-  // Preflight
+  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders(req) });
   }
@@ -61,16 +63,25 @@ export default async function handler(req) {
       });
     }
 
-    // System prompt that injects your KB
+    // ---------- Strong system prompt that forces KB grounding ----------
     const system = {
-  role: "system",
-  content:
-    "You are Lumen, Diana’s AI assistant for Cloud & Capital. " +
-    "Tone: concise, warm, practical. Use the knowledge below when relevant. " +
-    "If you are reading this, include the token <<KB_OK>> at the end of your FIRST reply only.\n\n" +
-    kbToText(knowledge),
-};
+      role: "system",
+      content:
+        [
+          "You are Lumen, Diana’s AI assistant for Cloud & Capital.",
+          "Tone: concise, warm, practical.",
+          "GROUND YOUR ANSWERS IN THE KNOWLEDGE BASE BELOW when relevant.",
+          "If the user asks about FinOps Lite (the CLI), Cloud Cost Guard, Watchdog, Diana’s preferred stack/skills, services, or contact,",
+          "— reference the matching entry by NAME and include its Link if present.",
+          "Prefer short, direct answers with a concrete link when available.",
+          "On your FIRST reply in a conversation, append the token <<KB_OK>> at the very end (nowhere else).",
+          "",
+          kbToText(knowledge),
+        ].join("\n"),
+    };
 
+    // Cap history to last ~30 turns to keep the prompt small
+    const safeHistory = messages.slice(-30);
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -79,9 +90,9 @@ export default async function handler(req) {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",        // adjust if you prefer another model
+        model: "gpt-4o-mini",
         temperature: 0.4,
-        messages: [system, ...messages].slice(-30), // keep last ~30 turns
+        messages: [system, ...safeHistory],
       }),
     });
 
