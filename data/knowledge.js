@@ -1,5 +1,4 @@
 // data/knowledge.js
-// knowledge base for Lumen — Diana’s AI Assistant
 export const knowledge = [
   {
     id: "finops-lite",
